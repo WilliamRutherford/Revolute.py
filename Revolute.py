@@ -41,7 +41,7 @@ The points given represent the xz plane.
 def cross_section(generatrix_pts):
     cylinder_coords = cylindrical(generatrix_pts)
     # Remove the angle theta, so they are all pushed to the xz plane, which we now consider the xy plane. 
-    return cylinder_coords[:, (1,2)]
+    return cylinder_coords[[1,2]]
 
 '''
 Given two cross sections which generate surfaces of revolution, compute the distance between them.  
@@ -159,16 +159,20 @@ def parametric_revolution(fx, fy):
     fb = (lambda t, theta : fx(t) * math.sin(theta))
     fc = (lambda t, theta : fy(t))
     return fa, fb, fc
-    
-circle_theta    = np.linspace(0, 2 * math.pi, 50)
-basic_circle    = np.vstack((0.25 * np.cos(circle_theta)+1, 0.25 * np.sin(circle_theta)))
-basic_circle_3d = section_to_3D(basic_circle)
-
-# Tilt the circle in 3D, to test 3D generatrix
-circle_tilt = R.from_euler('x', math.pi / 4).as_matrix() @ basic_circle_3d
 
 # Helper function to easily plot in 3D
 def plot_3D(pts):
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')     
     ax.scatter(pts[0], pts[1], pts[2])
+
+# --- Some useful starting shapes ---
+circle_theta    = np.linspace(0, 2 * math.pi, 50)
+basic_circle    = np.vstack((0.25 * np.cos(circle_theta)+1, 0.25 * np.sin(circle_theta)))
+basic_circle_3d = section_to_3D(basic_circle)
+# Tilt the circle in 3D, to test 3D generatrix
+circle_tilt = R.from_euler('x', math.pi / 4).as_matrix() @ basic_circle_3d
+
+h_steps = np.linspace(-5, 5, 50)
+h_line  = np.vstack((np.ones(50), h_steps, 2 * h_steps))
+hyperboloid = surface_revolution(h_line)
