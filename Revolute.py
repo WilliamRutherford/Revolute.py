@@ -46,15 +46,40 @@ def cross_section(generatrix_pts):
 '''
 Given two cross sections which generate surfaces of revolution, compute the distance between them.  
 The number in each need not be the same.
-cross_section_a.shape = (n, 2)
-cross_section_b.shape = (m, 2)
+cross_section_a.shape = (2, n)
+cross_section_b.shape = (2, m)
 '''
 def cross_section_dist(cross_section_a, cross_section_b):
     dist_matrix = distance.cdist(cross_section_a, cross_section_b)
     return np.sum(np.min(dist_matrix, axis = 0))
 
+'''
+Given two Generatrix sets of points (in 3D) which generate a surface of revolution, compute the distance between them.
+The number in each need not be the same.
+cross_section_a.shape = (3, n)
+cross_section_b.shape = (3, m)
+'''
 def generatrix_dist(generatrix_a, generatrix_b):
     return cross_section_dist(cross_section(generatrix_a), cross_section(generatrix_b))
+
+'''
+Given two sources for a surface of revolution (cross section or generatrix) create a surface of resolution, and compute the distance between them. 
+Why use this instead of the ones above? the process of revolution MIGHT introduce a multiplicative change.  
+'''
+def revolution_dist(source_a, source_b, angle_divs = 100):
+    # If either is 2D (a cross section) convert to 3D. 
+    if(len(source_a) == 2):
+        pts_a = section_to_3D(source_a)
+    else:
+        pts_a = source_a
+    if(len(source_b) == 2):
+        pts_b = section_to_3D(source_b)
+    else:
+        pts_b = source_b
+    rev_a = surface_revolution(pts_a, angle_divs = angle_divs)
+    rev_b = surface_revolution(pts_b, angle_divs = angle_divs)
+    dist_matrix = distance.cdist(rev_a, rev_b)
+    return np.sum(np.min(dist_matrix, axis = 0))    
 
 '''
 Given a set of 2D points, convert them to 3D. they are represented in the xz plane. 
@@ -101,6 +126,19 @@ def surface_revolution(canonical_pts, angle_divs = 60, relative_divs = None, log
     else:
         raise NotImplementedError("for Surface Revolution, use 'angle_divs' instead of 'relative_divs'")
 
+'''
+Given a set of 2D points in the xy plane, twist them around the z axis. 
+pts.shape = (2, m)
+num_twists : the number of rotations per unit height
+vert_divs: the number of vertical slices
+z_bound: The upper and lower bound for the new twisted shape. 
+'''
+def twist(pts, num_twists = 1, vert_divs = 50, z_bound = (-1, 1)):
+    z_offsets = np.linspace(z_bound[0], z_bound[1], vert_divs)
+    angle_offsets = 2 * math.pi * num_twists * z_offsets
+    # It will be easier if we convert the points to 3D, then convert to cylindrical and back
+    # pts_cylindrical[0] += angle_offsets
+    # pts_cylindrical[2] += z_offsets 
 
 '''
 Given a parametric function described by x(t) and y(t), return a parametric shape of revolution. 
