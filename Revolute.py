@@ -93,7 +93,41 @@ def section_to_3D(pts_2d):
     pts = pts[[0, 2, 1], :]
     return pts
 
-
+'''
+Given some parameters, generate a 2D square. 
+side_len : the length of each side
+center : the center point of the square in 2D space
+'''
+def square_2D(side_len, side_num = 10, center = np.array([1,0])):
+    # The linearly spaced distances we will use to construct the sides
+    line_pts = np.linspace(-side_len / 2, side_len / 2, side_num, endpoint = False)
+    line_x = np.vstack((line_pts, np.zeros(side_num)))
+    line_y = line_x[[1,0]]
+    
+    #center_x = np.array([center[0], 0        ])[:, np.newaxis]
+    #center_y = np.array([0        , center[1]])[:, np.newaxis]
+    
+    side_x = np.array([side_len / 2, 0])[:, np.newaxis]
+    side_y = side_x[[1,0]]
+    
+    if(log):
+        print("line x:", line_x)
+        print("line y:", line_y)
+    l_side =  line_y - side_x
+    r_side = -line_y + side_x
+    u_side =  line_x + side_y
+    d_side = -line_x - side_y
+    
+    if(log):
+        print("sides shapes:")
+        print(l_side.shape)
+        print(r_side.shape)
+        print(u_side.shape)
+        print(d_side.shape)
+    
+    pts = np.concatenate((l_side, r_side, u_side, d_side), axis = 1)
+    pts += center[:, np.newaxis]
+    return pts
 '''
 Given a set of points (2D or 3D) revolve them around the Z axis and return a new set of points. 
 
@@ -176,3 +210,7 @@ circle_tilt = R.from_euler('x', math.pi / 4).as_matrix() @ basic_circle_3d
 h_steps = np.linspace(-5, 5, 50)
 h_line  = np.vstack((np.ones(50), h_steps, 2 * h_steps))
 hyperboloid = surface_revolution(h_line)
+
+# Generate a square with sidelength 0.3, centered at (1,0,0) parallel to the xz plane. 
+sqr_pts = square_2D(0.3)
+sqr = section_to_3D(sqr_pts)
