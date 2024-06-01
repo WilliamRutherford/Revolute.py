@@ -5,7 +5,7 @@ from scipy.spatial.transform import Rotation as R
 import matplotlib.pyplot as plt
 
 
-log = True
+log = False
 
 '''
 Given a set of m 3d points, convert them to cylindrical coordinates. 
@@ -187,6 +187,7 @@ b(t) = r(theta) * sin(theta) = x(t) * sin(theta)
 c(t) = y(t)
 
 The result will be three functions; a(t, theta), b(t, theta), c(t, theta)
+(Might be good to use functools.partial)
 '''
 def parametric_revolution(fx, fy):
     fa = (lambda t, theta : fx(t) * math.cos(theta))
@@ -194,6 +195,89 @@ def parametric_revolution(fx, fy):
     fc = (lambda t, theta : fy(t))
     return fa, fb, fc
 
+
+'''
+Given a set of points in a 2D matrix, remove all duplicate points (with some tolerance) similar to math.isclose or numpy.isclose.
+The default tolerance and keyword args are taken from numpy.isclose
+pts has shape (len, num_pts)
+return has shape (len, new_num_pts) for new_num_pts < num_pts
+'''
+def remove_duplicates(pts, rtol=1e-05, atol=1e-08):
+    num_pts = pts.shape[1]
+    # cdist assumes points are row-wise, with the form (num_pts, len)
+    # our points are col-wise with form (len, num_pts)
+    dist_matrix = distance.cdist(pts.T, pts.T)
+    dist_matrix[np.arange(0, num_pts), np.arange(0, num_pts)] = math.inf
+    min_dist = np.min(dist_matrix, axis = 0)
+    to_discard = np.isclose(min_dist, 0, rtol=rtol, atol=atol)
+    # to_keep = (to_discard == 0)
+    to_keep = np.logical_not(to_discard)
+    return pts[:, to_keep]
+    
+'''
+Given a set of points, repeatedly apply an operation to them and return the result.
+To make the algorithm more parallel, we split this into some rotation matrix, and a scaling factor. 
+It might be useful to have the option to return a 3D matrix, where result[k, :, :] is the set of points after k applications
+
+pts: (3,M) points to be transformed
+op_rot: a scipy.spacial.transform.Rotation object
+op_scale: a float denoting a scalar to multiply each successive application by
+op_offset: a (3,1) array denoting an amount to add to each successive application. This offset is applied last. 
+num_apps: an integer (N) denoting the maximum number of times the transform is applied. 
+matrix_result: A boolean determining whether the result should be reshapen.
+
+Return:
+if matrix_result is False:
+a (3, M * N) matrix
+if matrix_result is True:
+a (3, M, N) matrix, where the second axis (axis=1) denotes how many times the transform was applied. 
+this means that result[:,k] is the (3,N) matrix of all the points after being transformed k times. 
+'''
+def repeated_transform(pts, op_rot : R, op_scale : float, op_offset, num_apps : int, matrix_result = False, log=False):
+    num_pts = pts.shape[1]
+    # Get the rotation as a rotation vector, since we can scale it to increase the rotation. 
+    # has shape (N,)
+    app_range = np.arange(0, num_apps+1)
+    # has shape (3,)
+    rot_vec = op_rot.as_rotvec()[np.newaxis, :]
+    # The input for R.from_rotvec must be of the form (N, 3)
+    # (N, 3) = (N, 1) @ (1, 3)
+    each_rot_vec = app_range[:, np.newaxis] * rot_vec
+    # all rotations
+    all_rots = R.from_rotvec(each_rot_vec)
+    # has shape (N, 3, 3)
+    all_rot_mat = all_rots.as_matrix()
+    # all scale; has shape (N,)
+    all_scales = op_scale ** app_range
+    # all offsets; has shape (3,N) 
+    # (3, N) = (3, 1) @ (1, N)
+    if(len(op_offset.shape) == 1):
+        all_offsets = op_offset[:, np.newaxis] @ app_range[np.newaxis, :]
+    elif(op_offset.shape[0] == 1):
+        raise ValueError("offset vector has shape {0} when it must be in the form ({1},1)".format(op_offset.shape, np.max(op_offset.shape)))
+    else:
+        all_offsets = op_offset @ app_range[np.newaxis, :]
+    
+    # broadcasting of all three:
+    # all_rots:    (N,3,3) will multiply (3, M) to get (N, 3, M) which we cyclically transpose into (3, M, N)
+    if(log): print("M: {0} N: {1}".format(pts.shape[1], num_apps+1))
+    aft_rot = all_rot_mat @ pts
+    if(log): print("aft rotation shape:", aft_rot.shape)
+    aft_rot = np.transpose(aft_rot, axes=(1,2,0))
+    if(log): print("aft rotation transpose shape:", aft_rot.shape)
+    # all_scales:  (N,) -> (M,N) -> (1,M,N) to broadcast to (3,M,N)
+    all_scales_stretched = np.vstack(num_pts * (all_scales,))[np.newaxis, :, :]
+    if(log): print("all scale stretch shape:", all_scales_stretched.shape)
+    # all_offsets: (3,N) -> (3,M,N) repeated M times on axis=1
+    all_offsets_stretched = np.stack( (num_pts) * (all_offsets,), axis=1)
+    if(log): print("all offsets stretched shape:", all_offsets_stretched.shape)
+    # The result after transforming all points should look like (3, M, N) 3D points, M points, N successive transformations
+    full_result = aft_rot * all_scales_stretched + all_offsets_stretched
+    if(matrix_result):
+        return full_result
+    else:
+        return full_result.reshape(3, (num_apps + 1) * num_pts)
+        
 # Helper function to easily plot in 3D
 def plot_3D(pts):
     fig = plt.figure()
@@ -202,7 +286,12 @@ def plot_3D(pts):
 
 # --- Some useful starting shapes ---
 circle_theta    = np.linspace(0, 2 * math.pi, 50)
-basic_circle    = np.vstack((0.25 * np.cos(circle_theta)+1, 0.25 * np.sin(circle_theta)))
+# r * (cos t, sin t) + (1, 0)
+#basic_circle = 0.25 * np.vstack((np.cos(circle_theta), np.sin(circle_theta))) + np.array( len(circle_theta) * ([1,0],) ).T
+#basic_circle = 0.25 * np.vstack((np.cos(circle_theta), np.sin(circle_theta))) + np.repeat( np.array([[1],[0]], len(circle_theta), axis = 1)
+basic_circle_x = 0.25 * np.cos(circle_theta) + 1
+basic_circle_y = 0.25 * np.sin(circle_theta)
+basic_circle   = np.array((basic_circle_x, basic_circle_y))
 basic_circle_3d = section_to_3D(basic_circle)
 # Tilt the circle in 3D, to test 3D generatrix
 circle_tilt = R.from_euler('x', math.pi / 4).as_matrix() @ basic_circle_3d
@@ -214,3 +303,12 @@ hyperboloid = surface_revolution(h_line)
 # Generate a square with sidelength 0.3, centered at (1,0,0) parallel to the xz plane. 
 sqr_pts = square_2D(0.3)
 sqr = section_to_3D(sqr_pts)
+
+helix_num = 50
+dh_pts = np.array([[1,-1],[0,0],[0,0]])
+dub_helix = repeated_transform(dh_pts, R.from_euler('z',math.pi/20), 1.0, np.array([0,0,0.1]), helix_num)
+
+if( __name__ == '__main__'):
+    # repeated transform test
+    #rep_pts = repeated_transform(basic_circle_3d, R.from_euler('z', math.pi/8), 1.1, np.array([0,1,0]), 5)
+    pass
